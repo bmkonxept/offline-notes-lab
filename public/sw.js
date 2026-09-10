@@ -1,36 +1,38 @@
-const CACHE_NAME = "offline-notes-v4";
+const CACHE_NAME = "offline-notes-v5";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE_NAME);
 
-      const indexUrl = new URL("index.html", self.registration.scope);
+      const scope = self.registration.scope;
+      const indexUrl = new URL("index.html", scope);
 
       const response = await fetch(indexUrl);
       const html = await response.text();
 
-      const parser = new DOMParser();
-      const document = parser.parseFromString(html, "text/html");
-
       const resources = [
         indexUrl.toString(),
-        new URL("manifest.webmanifest", self.registration.scope).toString(),
+        new URL("manifest.webmanifest", scope).toString(),
       ];
 
-      document
-        .querySelectorAll('script[src], link[href]')
-        .forEach((element) => {
-          const url =
-            element.getAttribute("src") ||
-            element.getAttribute("href");
+      // Find JS and CSS files from the built index.html
+      const matches = html.matchAll(
+        /(?:src|href)="([^"]+)"/g
+      );
 
-          if (url) {
-            resources.push(
-              new URL(url, indexUrl).toString()
-            );
-          }
-        });
+      for (const match of matches) {
+        const path = match[1];
+
+        if (
+          path.endsWith(".js") ||
+          path.endsWith(".css")
+        ) {
+          resources.push(
+            new URL(path, indexUrl).toString()
+          );
+        }
+      }
 
       await cache.addAll([...new Set(resources)]);
     })()
@@ -41,15 +43,13 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter((key) => key !== CACHE_NAME)
-            .map((key) => caches.delete(key))
-        )
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((key) => key !== CACHE_NAME)
+          .map((key) => caches.delete(key))
       )
+    )
   );
 
   self.clients.claim();
@@ -68,8 +68,7 @@ self.addEventListener("fetch", (event) => {
         .then((networkResponse) => {
           if (
             networkResponse &&
-            networkResponse.status === 200 &&
-            networkResponse.type !== "opaque"
+            networkResponse.status === 200
           ) {
             const responseClone = networkResponse.clone();
 
